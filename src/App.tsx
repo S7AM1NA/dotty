@@ -1,27 +1,115 @@
-import { Target } from "lucide-react";
+import { useState, useEffect } from 'react';
+import { useTaskStore } from './store/useTaskStore';
+import { List, LayoutGrid } from 'lucide-react';
+import { register, unregisterAll } from '@tauri-apps/plugin-global-shortcut';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import ListView from './views/ListView';
+import CanvasView from './views/CanvasView';
 
-function App() {
+type ViewMode = 'list' | 'canvas';
+
+export default function App() {
+  const { addTask } = useTaskStore();
+  const [inputValue, setInputValue] = useState('');
+  const [viewMode, setViewMode] = useState<ViewMode>('list');
+
+  // 注册 Alt+S 全局快捷键
+  useEffect(() => {
+    const setupShortcut = async () => {
+      try {
+        const appWindow = getCurrentWindow();
+
+        await register('Alt+S', async (event) => {
+          if (event.state === 'Released') {
+            return;
+          }
+
+          const visible = await appWindow.isVisible();
+
+          if (visible) {
+            await appWindow.hide();
+          } else {
+            await appWindow.unminimize();
+            await appWindow.show();
+            await appWindow.setFocus();
+          }
+        });
+      } catch (error) {
+        console.error('Failed to register global shortcut:', error);
+      }
+    };
+
+    setupShortcut();
+
+    return () => {
+      unregisterAll().catch(console.error);
+    };
+  }, []);
+
+  // 监听 Esc 键隐藏窗口
+  useEffect(() => {
+    const handleEsc = async (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        const appWindow = getCurrentWindow();
+        await appWindow.hide();
+      }
+    };
+
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, []);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && inputValue.trim()) {
+      addTask(inputValue.trim());
+      setInputValue('');
+    }
+  };
+
   return (
-    // 这里的 h-screen, bg-stone-50 等都是 Tailwind 的类名
-    <div className="h-screen w-full bg-stone-50 flex flex-col items-center justify-center space-y-4">
-      
-      {/* 图标 */}
-      <div className="p-4 bg-white rounded-2xl shadow-sm border border-stone-200">
-        <Target className="w-12 h-12 text-blue-500" />
+    <div className="min-h-screen bg-stone-50 text-stone-900 font-sans selection:bg-stone-200">
+      {/* Header with Input and View Toggle */}
+      <div className="max-w-2xl mx-auto pt-12 px-6">
+        <div className="flex items-center gap-4 mb-8">
+          {/* Input Area */}
+          <input
+            type="text"
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="What needs to be done?"
+            className="flex-1 bg-transparent text-2xl placeholder:text-stone-300 outline-none border-none py-2 px-3 rounded-lg transition-all focus:ring-1 focus:ring-stone-200 focus:bg-white/30"
+            autoFocus
+          />
+
+          {/* View Toggle Buttons */}
+          <div className="flex items-center gap-1 bg-white/50 rounded-lg p-1">
+            <button
+              onClick={() => setViewMode('list')}
+              className={`p-2 rounded-md transition-all ${viewMode === 'list'
+                  ? 'bg-white text-stone-700 shadow-sm'
+                  : 'text-stone-400 hover:text-stone-600'
+                }`}
+              title="List View"
+            >
+              <List className="w-5 h-5" />
+            </button>
+            <button
+              onClick={() => setViewMode('canvas')}
+              className={`p-2 rounded-md transition-all ${viewMode === 'canvas'
+                  ? 'bg-white text-stone-700 shadow-sm'
+                  : 'text-stone-400 hover:text-stone-600'
+                }`}
+              title="Canvas View"
+            >
+              <LayoutGrid className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
       </div>
 
-      {/* 标题 */}
-      <h1 className="text-3xl font-bold text-stone-800 tracking-tight">
-        Hello, Dotty!
-      </h1>
-
-      {/* 测试按钮 */}
-      <button className="px-6 py-2 bg-black text-white rounded-lg hover:bg-stone-800 transition-colors">
-        如果你看到这个变黑了，说明 Tailwind 成功了
-      </button>
-
+      {/* View Content */}
+      {viewMode === 'list' ? <ListView /> : <CanvasView />}
     </div>
   );
 }
-
-export default App;
