@@ -17,8 +17,8 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { format, differenceInDays } from 'date-fns';
-import { useTaskStore, Task, GRID_SIZE, isTaskBlocked, getDueDateStatus } from '../store/useTaskStore';
-import { Circle, CheckCircle2, Trash2, Lock, Calendar } from 'lucide-react';
+import { useTaskStore, Task, GRID_SIZE, isTaskBlocked, getDueDateStatus, getSubtaskProgress } from '../store/useTaskStore';
+import { Circle, CheckCircle2, Trash2, Lock, Calendar, ListChecks } from 'lucide-react';
 
 // Node dimensions for collision detection
 const NODE_WIDTH = 200;
@@ -133,15 +133,31 @@ function TaskNode({ data }: { data: { task: Task; blocked: boolean; onToggle: ()
                 <div className="flex-1 min-w-0">
                     <span
                         className={`block text-sm transition-all truncate ${task.status === 'done'
-                            ? 'text-stone-400 line-through decoration-stone-300'
-                            : blocked
-                                ? 'text-stone-400'
-                                : 'text-stone-700'
+                                ? 'text-stone-400 line-through decoration-stone-300'
+                                : blocked
+                                    ? 'text-stone-400'
+                                    : 'text-stone-700'
                             }`}
                     >
                         {task.title}
                     </span>
-                    {getDueDateDisplay()}
+                    <div className="flex items-center gap-2 mt-0.5">
+                        {getDueDateDisplay()}
+                        {(task.subtasks?.length ?? 0) > 0 && (() => {
+                            const progress = getSubtaskProgress(task);
+                            return (
+                                <span
+                                    className={`flex items-center gap-0.5 text-xs px-1 py-0.5 rounded ${progress.done === progress.total
+                                            ? 'bg-green-100 text-green-600'
+                                            : 'bg-stone-100 text-stone-500'
+                                        }`}
+                                >
+                                    <ListChecks className="w-3 h-3" />
+                                    {progress.done}/{progress.total}
+                                </span>
+                            );
+                        })()}
+                    </div>
                 </div>
 
                 <button

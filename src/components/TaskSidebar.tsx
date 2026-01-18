@@ -1,12 +1,22 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { format } from 'date-fns';
-import { X, Trash2, Calendar, Clock } from 'lucide-react';
-import { useTaskStore, getDueDateStatus } from '../store/useTaskStore';
+import { X, Trash2, Calendar, Clock, CheckSquare, Square, Plus } from 'lucide-react';
+import { useTaskStore, getDueDateStatus, getSubtaskProgress } from '../store/useTaskStore';
 
 export default function TaskSidebar() {
-    const { tasks, selectedTaskId, selectTask, updateTask, deleteTask } = useTaskStore();
+    const {
+        tasks,
+        selectedTaskId,
+        selectTask,
+        updateTask,
+        deleteTask,
+        addSubtask,
+        toggleSubtask,
+        deleteSubtask,
+    } = useTaskStore();
     const task = tasks.find((t) => t.id === selectedTaskId);
     const titleInputRef = useRef<HTMLInputElement>(null);
+    const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
 
     // Close on Escape
     useEffect(() => {
@@ -26,9 +36,16 @@ export default function TaskSidebar() {
         }
     }, [task?.id]);
 
+    // Reset subtask input when task changes
+    useEffect(() => {
+        setNewSubtaskTitle('');
+    }, [task?.id]);
+
     if (!task) return null;
 
     const dueDateStatus = getDueDateStatus(task.dueDate);
+    const subtaskProgress = getSubtaskProgress(task);
+    const subtasks = task.subtasks || [];
 
     const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         updateTask(task.id, { title: e.target.value });
@@ -41,7 +58,6 @@ export default function TaskSidebar() {
     const handleDueDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const value = e.target.value;
         if (value) {
-            // Convert date string to timestamp (end of day)
             const date = new Date(value);
             date.setHours(23, 59, 59, 999);
             updateTask(task.id, { dueDate: date.getTime() });
@@ -59,7 +75,20 @@ export default function TaskSidebar() {
         selectTask(null);
     };
 
-    // Format dueDate for input
+    const handleAddSubtask = () => {
+        if (newSubtaskTitle.trim()) {
+            addSubtask(task.id, newSubtaskTitle.trim());
+            setNewSubtaskTitle('');
+        }
+    };
+
+    const handleSubtaskKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            handleAddSubtask();
+        }
+    };
+
     const dueDateValue = task.dueDate
         ? format(new Date(task.dueDate), 'yyyy-MM-dd')
         : '';
@@ -110,13 +139,11 @@ export default function TaskSidebar() {
                                 type="date"
                                 value={dueDateValue}
                                 onChange={handleDueDateChange}
-                                className={`flex-1 px-3 py-2 rounded-lg border text-sm outline-none transition-colors ${dueDateStatus === 'overdue'
+                                className={`flex-1 px-3 py-2 rounded-lg border text-sm outline-none transition-colors ${dueDateStatus === 'overdue' || dueDateStatus === 'urgent'
                                         ? 'border-red-300 bg-red-50 text-red-700'
-                                        : dueDateStatus === 'urgent'
-                                            ? 'border-red-300 bg-red-50 text-red-700'
-                                            : dueDateStatus === 'soon'
-                                                ? 'border-yellow-300 bg-yellow-50 text-yellow-700'
-                                                : 'border-stone-200 bg-white text-stone-700'
+                                        : dueDateStatus === 'soon'
+                                            ? 'border-yellow-300 bg-yellow-50 text-yellow-700'
+                                            : 'border-stone-200 bg-white text-stone-700'
                                     } focus:ring-2 focus:ring-stone-200`}
                             />
                             {task.dueDate && (
@@ -131,13 +158,11 @@ export default function TaskSidebar() {
                         </div>
                         {dueDateStatus && (
                             <p
-                                className={`text-xs ${dueDateStatus === 'overdue'
+                                className={`text-xs ${dueDateStatus === 'overdue' || dueDateStatus === 'urgent'
                                         ? 'text-red-500'
-                                        : dueDateStatus === 'urgent'
-                                            ? 'text-red-500'
-                                            : dueDateStatus === 'soon'
-                                                ? 'text-yellow-600'
-                                                : 'text-stone-400'
+                                        : dueDateStatus === 'soon'
+                                            ? 'text-yellow-600'
+                                            : 'text-stone-400'
                                     }`}
                             >
                                 {dueDateStatus === 'overdue' && '⚠️ Overdue'}
@@ -148,6 +173,76 @@ export default function TaskSidebar() {
                         )}
                     </div>
 
+                    {/* Checklist */}
+                    <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                            <label className="flex items-center gap-2 text-sm text-stone-500">
+                                <CheckSquare className="w-4 h-4" />
+                                Checklist
+                            </label>
+                            {subtasks.length > 0 && (
+                                <span
+                                    className={`text-xs px-2 py-0.5 rounded-full ${subtaskProgress.done === subtaskProgress.total
+                                            ? 'bg-green-100 text-green-600'
+                                            : 'bg-stone-100 text-stone-500'
+                                        }`}
+                                >
+                                    {subtaskProgress.done}/{subtaskProgress.total}
+                                </span>
+                            )}
+                        </div>
+
+                        {/* Subtask Input */}
+                        <div className="flex items-center gap-2">
+                            <Plus className="w-4 h-4 text-stone-300" />
+                            <input
+                                type="text"
+                                value={newSubtaskTitle}
+                                onChange={(e) => setNewSubtaskTitle(e.target.value)}
+                                onKeyDown={handleSubtaskKeyDown}
+                                placeholder="Add a step..."
+                                className="flex-1 text-sm text-stone-700 bg-transparent border-none outline-none placeholder:text-stone-300"
+                            />
+                        </div>
+
+                        {/* Subtask List */}
+                        {subtasks.length > 0 && (
+                            <ul className="space-y-1">
+                                {subtasks.map((subtask) => (
+                                    <li
+                                        key={subtask.id}
+                                        className="group flex items-center gap-2 py-1 px-1 -mx-1 rounded hover:bg-stone-50 transition-colors"
+                                    >
+                                        <button
+                                            onClick={() => toggleSubtask(task.id, subtask.id)}
+                                            className="text-stone-400 hover:text-stone-600 transition-colors"
+                                        >
+                                            {subtask.done ? (
+                                                <CheckSquare className="w-4 h-4 text-green-500" />
+                                            ) : (
+                                                <Square className="w-4 h-4" />
+                                            )}
+                                        </button>
+                                        <span
+                                            className={`flex-1 text-sm ${subtask.done
+                                                    ? 'text-stone-400 line-through'
+                                                    : 'text-stone-700'
+                                                }`}
+                                        >
+                                            {subtask.title}
+                                        </span>
+                                        <button
+                                            onClick={() => deleteSubtask(task.id, subtask.id)}
+                                            className="opacity-0 group-hover:opacity-100 p-1 text-stone-300 hover:text-red-400 transition-all"
+                                        >
+                                            <X className="w-3 h-3" />
+                                        </button>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </div>
+
                     {/* Description */}
                     <div className="space-y-2">
                         <label className="text-sm text-stone-500">Notes</label>
@@ -155,7 +250,7 @@ export default function TaskSidebar() {
                             value={task.description}
                             onChange={handleDescriptionChange}
                             placeholder="Add notes..."
-                            rows={6}
+                            rows={4}
                             className="w-full px-3 py-2 rounded-lg border border-stone-200 bg-white text-sm text-stone-700 placeholder:text-stone-300 outline-none resize-none focus:ring-2 focus:ring-stone-200 transition-colors"
                         />
                     </div>

@@ -5,6 +5,13 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 // Grid size constant - must match CanvasView grid settings
 export const GRID_SIZE = 20;
 
+// Subtask interface
+export interface Subtask {
+    id: string;
+    title: string;
+    done: boolean;
+}
+
 export interface Task {
     id: string;
     title: string;
@@ -14,6 +21,7 @@ export interface Task {
     dependencies: string[]; // IDs of tasks that this task depends on (predecessors)
     dueDate: number | null; // Deadline timestamp
     description: string; // Task notes/markdown
+    subtasks: Subtask[]; // Checklist items
 }
 
 interface TaskState {
@@ -31,6 +39,10 @@ interface TaskState {
     addDependency: (sourceId: string, targetId: string) => boolean;
     removeDependency: (sourceId: string, targetId: string) => void;
     selectTask: (id: string | null) => void;
+    // Subtask actions
+    addSubtask: (taskId: string, title: string) => void;
+    toggleSubtask: (taskId: string, subtaskId: string) => void;
+    deleteSubtask: (taskId: string, subtaskId: string) => void;
 }
 
 // Helper: snap value to grid
@@ -136,7 +148,6 @@ export const getSortedTasks = (tasks: Task[]): Task[] => {
 
 /**
  * Get due date status for color coding
- * Returns: 'overdue' | 'urgent' | 'soon' | 'normal' | null
  */
 export const getDueDateStatus = (dueDate: number | null): 'overdue' | 'urgent' | 'soon' | 'normal' | null => {
     if (!dueDate) return null;
@@ -149,6 +160,15 @@ export const getDueDateStatus = (dueDate: number | null): 'overdue' | 'urgent' |
     if (diffDays < 1) return 'urgent';
     if (diffDays < 3) return 'soon';
     return 'normal';
+};
+
+/**
+ * Get subtask progress for a task
+ */
+export const getSubtaskProgress = (task: Task): { done: number; total: number } => {
+    const subtasks = task.subtasks || [];
+    const done = subtasks.filter((s) => s.done).length;
+    return { done, total: subtasks.length };
 };
 
 // ==================== Store ====================
@@ -170,6 +190,7 @@ export const useTaskStore = create<TaskState>()(
                         dependencies: [],
                         dueDate: null,
                         description: '',
+                        subtasks: [],
                     };
                     return {
                         tasks: [newTask, ...state.tasks],
@@ -193,7 +214,6 @@ export const useTaskStore = create<TaskState>()(
                             ...task,
                             dependencies: (task.dependencies || []).filter((depId) => depId !== id),
                         })),
-                    // Clear selection if deleted task was selected
                     selectedTaskId: state.selectedTaskId === id ? null : state.selectedTaskId,
                 })),
 
@@ -232,6 +252,7 @@ export const useTaskStore = create<TaskState>()(
                         dependencies: task.dependencies || [],
                         dueDate: task.dueDate ?? null,
                         description: task.description ?? '',
+                        subtasks: task.subtasks || [],
                     })),
                 })),
 
@@ -279,26 +300,68 @@ export const useTaskStore = create<TaskState>()(
 
             selectTask: (id: string | null) =>
                 set({ selectedTaskId: id }),
+
+            // Subtask actions
+            addSubtask: (taskId: string, title: string) =>
+                set((state) => ({
+                    tasks: state.tasks.map((task) =>
+                        task.id === taskId
+                            ? {
+                                ...task,
+                                subtasks: [
+                                    ...(task.subtasks || []),
+                                    { id: uuidv4(), title, done: false },
+                                ],
+                            }
+                            : task
+                    ),
+                })),
+
+            toggleSubtask: (taskId: string, subtaskId: string) =>
+                set((state) => ({
+                    tasks: state.tasks.map((task) =>
+                        task.id === taskId
+                            ? {
+                                ...task,
+                                subtasks: (task.subtasks || []).map((sub) =>
+                                    sub.id === subtaskId ? { ...sub, done: !sub.done } : sub
+                                ),
+                            }
+                            : task
+                    ),
+                })),
+
+            deleteSubtask: (taskId: string, subtaskId: string) =>
+                set((state) => ({
+                    tasks: state.tasks.map((task) =>
+                        task.id === taskId
+                            ? {
+                                ...task,
+                                subtasks: (task.subtasks || []).filter((sub) => sub.id !== subtaskId),
+                            }
+                            : task
+                    ),
+                })),
         }),
         {
             name: 'dotty-storage',
-            version: 2,
+            version: 3,
             storage: createJSONStorage(() => localStorage),
             partialize: (state) => ({
                 tasks: state.tasks,
-                // Don't persist selectedTaskId
             }),
             migrate: (persistedState: unknown, version: number) => {
                 const state = persistedState as { tasks?: Task[] };
 
-                if (version < 2) {
-                    // Migration: ensure all tasks have new fields
+                if (version < 3) {
+                    // Migration: ensure all tasks have new fields including subtasks
                     if (state.tasks) {
                         state.tasks = state.tasks.map((task) => ({
                             ...task,
                             dependencies: task.dependencies || [],
                             dueDate: task.dueDate ?? null,
                             description: task.description ?? '',
+                            subtasks: task.subtasks || [],
                         }));
                     }
                 }
