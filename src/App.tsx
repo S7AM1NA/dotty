@@ -5,6 +5,7 @@ import { register, unregisterAll } from '@tauri-apps/plugin-global-shortcut';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import ListView from './views/ListView';
 import CanvasView from './views/CanvasView';
+import TaskSidebar from './components/TaskSidebar';
 
 type ViewMode = 'list' | 'canvas';
 
@@ -46,18 +47,24 @@ export default function App() {
     };
   }, []);
 
-  // 监听 Esc 键隐藏窗口
+  // 监听 Esc 键：如果侧边栏打开则关闭侧边栏，否则隐藏窗口
+  const { selectedTaskId, selectTask } = useTaskStore();
+
   useEffect(() => {
     const handleEsc = async (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        const appWindow = getCurrentWindow();
-        await appWindow.hide();
+        if (selectedTaskId) {
+          selectTask(null);
+        } else {
+          const appWindow = getCurrentWindow();
+          await appWindow.hide();
+        }
       }
     };
 
     window.addEventListener('keydown', handleEsc);
     return () => window.removeEventListener('keydown', handleEsc);
-  }, []);
+  }, [selectedTaskId, selectTask]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && inputValue.trim()) {
@@ -87,8 +94,8 @@ export default function App() {
             <button
               onClick={() => setViewMode('list')}
               className={`p-2 rounded-md transition-all ${viewMode === 'list'
-                  ? 'bg-white text-stone-700 shadow-sm'
-                  : 'text-stone-400 hover:text-stone-600'
+                ? 'bg-white text-stone-700 shadow-sm'
+                : 'text-stone-400 hover:text-stone-600'
                 }`}
               title="List View"
             >
@@ -97,8 +104,8 @@ export default function App() {
             <button
               onClick={() => setViewMode('canvas')}
               className={`p-2 rounded-md transition-all ${viewMode === 'canvas'
-                  ? 'bg-white text-stone-700 shadow-sm'
-                  : 'text-stone-400 hover:text-stone-600'
+                ? 'bg-white text-stone-700 shadow-sm'
+                : 'text-stone-400 hover:text-stone-600'
                 }`}
               title="Canvas View"
             >
@@ -110,6 +117,9 @@ export default function App() {
 
       {/* View Content */}
       {viewMode === 'list' ? <ListView /> : <CanvasView />}
+
+      {/* Task Sidebar */}
+      <TaskSidebar />
     </div>
   );
 }

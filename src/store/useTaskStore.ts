@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 
 // Grid size constant - must match CanvasView grid settings
 export const GRID_SIZE = 20;
@@ -11,15 +11,26 @@ export interface Task {
     status: 'todo' | 'done';
     createdAt: number;
     position?: { x: number; y: number }; // For Canvas view
+    dependencies: string[]; // IDs of tasks that this task depends on (predecessors)
+    dueDate: number | null; // Deadline timestamp
+    description: string; // Task notes/markdown
 }
 
 interface TaskState {
+    // Data
     tasks: Task[];
+    // UI State
+    selectedTaskId: string | null;
+    // Actions
     addTask: (title: string) => void;
     toggleTask: (id: string) => void;
     deleteTask: (id: string) => void;
+    updateTask: (id: string, updates: Partial<Task>) => void;
     updateTaskPosition: (id: string, position: { x: number; y: number }) => void;
-    cleanupPositions: () => void; // Force align all positions to grid
+    cleanupPositions: () => void;
+    addDependency: (sourceId: string, targetId: string) => boolean;
+    removeDependency: (sourceId: string, targetId: string) => void;
+    selectTask: (id: string | null) => void;
 }
 
 // Helper: snap value to grid
@@ -39,10 +50,115 @@ const getInitialPosition = (index: number): { x: number; y: number } => {
     };
 };
 
+// Helper: Cycle detection using DFS
+const wouldCreateCycle = (
+    tasks: Task[],
+    sourceId: string,
+    targetId: string
+): boolean => {
+    const dependentsMap = new Map<string, string[]>();
+    tasks.forEach((task) => {
+        (task.dependencies || []).forEach((depId) => {
+            const dependents = dependentsMap.get(depId) || [];
+            dependents.push(task.id);
+            dependentsMap.set(depId, dependents);
+        });
+    });
+
+    const visited = new Set<string>();
+    const stack = [targetId];
+
+    while (stack.length > 0) {
+        const current = stack.pop()!;
+        if (current === sourceId) {
+            return true;
+        }
+        if (visited.has(current)) {
+            continue;
+        }
+        visited.add(current);
+        const dependents = dependentsMap.get(current) || [];
+        stack.push(...dependents);
+    }
+
+    return false;
+};
+
+// ==================== Selectors ====================
+
+/**
+ * Check if a task is blocked (has unfinished dependencies)
+ */
+export const isTaskBlocked = (task: Task, allTasks: Task[]): boolean => {
+    const deps = task.dependencies || [];
+    if (deps.length === 0) return false;
+
+    return deps.some((depId) => {
+        const depTask = allTasks.find((t) => t.id === depId);
+        return depTask && depTask.status === 'todo';
+    });
+};
+
+/**
+ * Get tasks sorted by topological order
+ */
+export const getSortedTasks = (tasks: Task[]): Task[] => {
+    const getTaskPriority = (task: Task): number => {
+        const deps = task.dependencies || [];
+
+        if (deps.length === 0) {
+            return 0;
+        }
+
+        const allDepsCompleted = deps.every((depId) => {
+            const depTask = tasks.find((t) => t.id === depId);
+            return depTask && depTask.status === 'done';
+        });
+
+        if (allDepsCompleted) {
+            return 1;
+        }
+
+        return 2;
+    };
+
+    return [...tasks].sort((a, b) => {
+        const priorityA = getTaskPriority(a);
+        const priorityB = getTaskPriority(b);
+
+        if (priorityA !== priorityB) {
+            return priorityA - priorityB;
+        }
+
+        return b.createdAt - a.createdAt;
+    });
+};
+
+/**
+ * Get due date status for color coding
+ * Returns: 'overdue' | 'urgent' | 'soon' | 'normal' | null
+ */
+export const getDueDateStatus = (dueDate: number | null): 'overdue' | 'urgent' | 'soon' | 'normal' | null => {
+    if (!dueDate) return null;
+
+    const now = Date.now();
+    const diffMs = dueDate - now;
+    const diffDays = diffMs / (1000 * 60 * 60 * 24);
+
+    if (diffDays < 0) return 'overdue';
+    if (diffDays < 1) return 'urgent';
+    if (diffDays < 3) return 'soon';
+    return 'normal';
+};
+
+// ==================== Store ====================
+
 export const useTaskStore = create<TaskState>()(
     persist(
-        (set) => ({
+        (set, get) => ({
             tasks: [],
+            selectedTaskId: null,
+
             addTask: (title: string) =>
                 set((state) => {
                     const newTask: Task = {
@@ -50,13 +166,16 @@ export const useTaskStore = create<TaskState>()(
                         title,
                         status: 'todo',
                         createdAt: Date.now(),
-                        // Generate grid-aligned position for new task
                         position: getInitialPosition(state.tasks.length),
+                        dependencies: [],
+                        dueDate: null,
+                        description: '',
                     };
                     return {
                         tasks: [newTask, ...state.tasks],
                     };
                 }),
+
             toggleTask: (id: string) =>
                 set((state) => ({
                     tasks: state.tasks.map((task) =>
@@ -65,10 +184,26 @@ export const useTaskStore = create<TaskState>()(
                             : task
                     ),
                 })),
+
             deleteTask: (id: string) =>
                 set((state) => ({
-                    tasks: state.tasks.filter((task) => task.id !== id),
+                    tasks: state.tasks
+                        .filter((task) => task.id !== id)
+                        .map((task) => ({
+                            ...task,
+                            dependencies: (task.dependencies || []).filter((depId) => depId !== id),
+                        })),
+                    // Clear selection if deleted task was selected
+                    selectedTaskId: state.selectedTaskId === id ? null : state.selectedTaskId,
                 })),
+
+            updateTask: (id: string, updates: Partial<Task>) =>
+                set((state) => ({
+                    tasks: state.tasks.map((task) =>
+                        task.id === id ? { ...task, ...updates } : task
+                    ),
+                })),
+
             updateTaskPosition: (id: string, position: { x: number; y: number }) =>
                 set((state) => ({
                     tasks: state.tasks.map((task) =>
@@ -83,7 +218,7 @@ export const useTaskStore = create<TaskState>()(
                             : task
                     ),
                 })),
-            // Force cleanup all positions to align to grid
+
             cleanupPositions: () =>
                 set((state) => ({
                     tasks: state.tasks.map((task, index) => ({
@@ -94,11 +229,82 @@ export const useTaskStore = create<TaskState>()(
                                 y: snapToGrid(task.position.y),
                             }
                             : getInitialPosition(index),
+                        dependencies: task.dependencies || [],
+                        dueDate: task.dueDate ?? null,
+                        description: task.description ?? '',
                     })),
                 })),
+
+            addDependency: (sourceId: string, targetId: string): boolean => {
+                const state = get();
+
+                if (sourceId === targetId) {
+                    console.warn('Cannot add self-dependency');
+                    return false;
+                }
+
+                const targetTask = state.tasks.find((t) => t.id === targetId);
+                if (targetTask?.dependencies?.includes(sourceId)) {
+                    console.warn('Dependency already exists');
+                    return false;
+                }
+
+                if (wouldCreateCycle(state.tasks, sourceId, targetId)) {
+                    console.warn('Cannot add dependency: would create a cycle');
+                    return false;
+                }
+
+                set((state) => ({
+                    tasks: state.tasks.map((task) =>
+                        task.id === targetId
+                            ? { ...task, dependencies: [...(task.dependencies || []), sourceId] }
+                            : task
+                    ),
+                }));
+
+                return true;
+            },
+
+            removeDependency: (sourceId: string, targetId: string) =>
+                set((state) => ({
+                    tasks: state.tasks.map((task) =>
+                        task.id === targetId
+                            ? {
+                                ...task,
+                                dependencies: (task.dependencies || []).filter((id) => id !== sourceId),
+                            }
+                            : task
+                    ),
+                })),
+
+            selectTask: (id: string | null) =>
+                set({ selectedTaskId: id }),
         }),
         {
             name: 'dotty-storage',
+            version: 2,
+            storage: createJSONStorage(() => localStorage),
+            partialize: (state) => ({
+                tasks: state.tasks,
+                // Don't persist selectedTaskId
+            }),
+            migrate: (persistedState: unknown, version: number) => {
+                const state = persistedState as { tasks?: Task[] };
+
+                if (version < 2) {
+                    // Migration: ensure all tasks have new fields
+                    if (state.tasks) {
+                        state.tasks = state.tasks.map((task) => ({
+                            ...task,
+                            dependencies: task.dependencies || [],
+                            dueDate: task.dueDate ?? null,
+                            description: task.description ?? '',
+                        }));
+                    }
+                }
+
+                return state as TaskState;
+            },
         }
     )
 );
