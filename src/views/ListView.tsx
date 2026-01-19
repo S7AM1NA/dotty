@@ -5,11 +5,9 @@ import { useTaskStore, getSortedTasks, isTaskBlocked, getDueDateStatus, getSubta
 export default function ListView() {
     const { tasks, toggleTask, deleteTask, selectTask } = useTaskStore();
 
-    // Get tasks sorted by topological order
     const sortedTasks = getSortedTasks(tasks);
 
     const handleTaskClick = (taskId: string, e: React.MouseEvent) => {
-        // Don't open sidebar if clicking on buttons
         if ((e.target as HTMLElement).closest('button')) {
             return;
         }
@@ -27,17 +25,17 @@ export default function ListView() {
         let colorClass = '';
 
         if (status === 'overdue') {
-            text = `Overdue`;
+            text = 'Overdue';
             colorClass = 'text-red-500';
         } else if (status === 'urgent') {
             text = 'Today';
             colorClass = 'text-red-500';
         } else if (status === 'soon') {
             text = `${diffDays}d left`;
-            colorClass = 'text-yellow-600';
+            colorClass = 'text-yellow-600 dark:text-yellow-500';
         } else {
             text = format(date, 'MMM d');
-            colorClass = 'text-stone-400';
+            colorClass = 'text-stone-400 dark:text-zinc-500';
         }
 
         return (
@@ -50,7 +48,6 @@ export default function ListView() {
 
     return (
         <div className="max-w-2xl mx-auto px-6">
-            {/* Task List */}
             <ul className="space-y-1">
                 {sortedTasks.map((task) => {
                     const blocked = isTaskBlocked(task, tasks);
@@ -59,7 +56,7 @@ export default function ListView() {
                         <li
                             key={task.id}
                             onClick={(e) => handleTaskClick(task.id, e)}
-                            className={`group flex items-center gap-4 p-3 rounded-xl hover:bg-white/50 transition-all duration-300 ease-out cursor-pointer ${blocked ? 'opacity-50' : ''
+                            className={`group flex items-center gap-4 p-3 rounded-xl hover:bg-white/50 dark:hover:bg-zinc-800/50 transition-all duration-300 ease-out cursor-pointer ${blocked ? 'opacity-50' : ''
                                 }`}
                         >
                             <div className="relative">
@@ -68,7 +65,7 @@ export default function ListView() {
                                         e.stopPropagation();
                                         toggleTask(task.id);
                                     }}
-                                    className="text-stone-400 hover:text-stone-600 transition-colors focus:outline-none"
+                                    className="text-stone-400 dark:text-zinc-500 hover:text-stone-600 dark:hover:text-zinc-300 transition-colors focus:outline-none"
                                 >
                                     {task.status === 'done' ? (
                                         <CheckCircle2 className="w-6 h-6 text-green-500/80" />
@@ -77,19 +74,18 @@ export default function ListView() {
                                     )}
                                 </button>
 
-                                {/* Lock icon for blocked tasks */}
                                 {blocked && task.status === 'todo' && (
-                                    <Lock className="w-3 h-3 text-stone-400 absolute -top-1 -right-1" />
+                                    <Lock className="w-3 h-3 text-stone-400 dark:text-zinc-500 absolute -top-1 -right-1" />
                                 )}
                             </div>
 
                             <div className="flex-1 min-w-0">
                                 <span
                                     className={`block text-lg transition-all duration-300 truncate ${task.status === 'done'
-                                            ? 'text-stone-400 line-through decoration-stone-300'
+                                            ? 'text-stone-400 dark:text-zinc-600 line-through decoration-stone-300 dark:decoration-zinc-700'
                                             : blocked
-                                                ? 'text-stone-400'
-                                                : 'text-stone-700'
+                                                ? 'text-stone-400 dark:text-zinc-500'
+                                                : 'text-stone-700 dark:text-zinc-200'
                                         }`}
                                 >
                                     {task.title}
@@ -101,8 +97,8 @@ export default function ListView() {
                                         return (
                                             <span
                                                 className={`flex items-center gap-1 text-xs px-1.5 py-0.5 rounded ${progress.done === progress.total
-                                                        ? 'bg-green-100 text-green-600'
-                                                        : 'bg-stone-100 text-stone-500'
+                                                        ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
+                                                        : 'bg-stone-100 dark:bg-zinc-800 text-stone-500 dark:text-zinc-400'
                                                     }`}
                                             >
                                                 <ListChecks className="w-3 h-3" />
@@ -118,7 +114,7 @@ export default function ListView() {
                                     e.stopPropagation();
                                     deleteTask(task.id);
                                 }}
-                                className="opacity-0 group-hover:opacity-100 p-2 text-stone-300 hover:text-red-400 transition-all duration-200 focus:outline-none"
+                                className="opacity-0 group-hover:opacity-100 p-2 text-stone-300 dark:text-zinc-600 hover:text-red-400 transition-all duration-200 focus:outline-none"
                             >
                                 <Trash2 className="w-5 h-5" />
                             </button>
@@ -128,7 +124,7 @@ export default function ListView() {
             </ul>
 
             {tasks.length === 0 && (
-                <div className="text-center mt-20 text-stone-300 pointer-events-none">
+                <div className="text-center mt-20 text-stone-300 dark:text-zinc-600 pointer-events-none">
                     <p>No tasks yet</p>
                 </div>
             )}

@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useState, useEffect, useRef } from 'react';
 import {
     ReactFlow,
     Background,
@@ -19,13 +19,14 @@ import '@xyflow/react/dist/style.css';
 import { format, differenceInDays } from 'date-fns';
 import { useTaskStore, Task, GRID_SIZE, isTaskBlocked, getDueDateStatus, getSubtaskProgress } from '../store/useTaskStore';
 import { Circle, CheckCircle2, Trash2, Lock, Calendar, ListChecks } from 'lucide-react';
+import { useTheme } from '../hooks/useTheme';
 
 // Node dimensions for collision detection
 const NODE_WIDTH = 200;
 const NODE_HEIGHT = 60;
 
-// Override xyflow default node styles
-const nodeStyleOverrides = `
+// Override xyflow default node styles (dynamic via CSS variables)
+const getNodeStyleOverrides = (isDark: boolean) => `
   .react-flow__node {
     padding: 0 !important;
     margin: 0 !important;
@@ -37,24 +38,41 @@ const nodeStyleOverrides = `
   .react-flow__handle {
     width: 8px;
     height: 8px;
-    background: #d6d3d1;
-    border: 2px solid #a8a29e;
+    background: ${isDark ? '#52525b' : '#d6d3d1'};
+    border: 2px solid ${isDark ? '#71717a' : '#a8a29e'};
   }
   .react-flow__handle:hover {
-    background: #78716c;
+    background: ${isDark ? '#a1a1aa' : '#78716c'};
   }
   .react-flow__edge.selected .react-flow__edge-path {
     stroke: #ef4444 !important;
     stroke-width: 3px !important;
   }
   .react-flow__edge:hover .react-flow__edge-path {
-    stroke: #78716c !important;
+    stroke: ${isDark ? '#a1a1aa' : '#78716c'} !important;
+  }
+  /* Controls dark mode fix */
+  .react-flow__controls {
+    background: ${isDark ? '#27272a' : '#ffffff'} !important;
+    border: 1px solid ${isDark ? '#3f3f46' : '#e7e5e4'} !important;
+    box-shadow: ${isDark ? '0 1px 3px rgba(0,0,0,0.3)' : '0 1px 3px rgba(0,0,0,0.1)'} !important;
+  }
+  .react-flow__controls-button {
+    background: ${isDark ? '#27272a' : '#ffffff'} !important;
+    border-bottom: 1px solid ${isDark ? '#3f3f46' : '#e7e5e4'} !important;
+    fill: ${isDark ? '#a1a1aa' : '#78716c'} !important;
+  }
+  .react-flow__controls-button:hover {
+    background: ${isDark ? '#3f3f46' : '#f5f5f4'} !important;
+  }
+  .react-flow__controls-button svg {
+    fill: ${isDark ? '#a1a1aa' : '#78716c'} !important;
   }
 `;
 
 // Custom node component for tasks with connection handles
-function TaskNode({ data }: { data: { task: Task; blocked: boolean; onToggle: () => void; onDelete: () => void; onSelect: () => void } }) {
-    const { task, blocked, onToggle, onDelete, onSelect } = data;
+function TaskNode({ data }: { data: { task: Task; blocked: boolean; isDark: boolean; onToggle: () => void; onDelete: () => void; onSelect: () => void } }) {
+    const { task, blocked, isDark, onToggle, onDelete, onSelect } = data;
 
     const getDueDateDisplay = () => {
         if (!task.dueDate || task.status === 'done') return null;
@@ -74,10 +92,10 @@ function TaskNode({ data }: { data: { task: Task; blocked: boolean; onToggle: ()
             colorClass = 'text-red-500';
         } else if (status === 'soon') {
             text = `${diffDays}d`;
-            colorClass = 'text-yellow-600';
+            colorClass = 'text-yellow-600 dark:text-yellow-500';
         } else {
             text = format(date, 'MMM d');
-            colorClass = 'text-stone-400';
+            colorClass = 'text-stone-400 dark:text-zinc-500';
         }
 
         return (
@@ -89,7 +107,6 @@ function TaskNode({ data }: { data: { task: Task; blocked: boolean; onToggle: ()
     };
 
     const handleClick = (e: React.MouseEvent) => {
-        // Don't open sidebar if clicking on buttons or handles
         if ((e.target as HTMLElement).closest('button') || (e.target as HTMLElement).closest('.react-flow__handle')) {
             return;
         }
@@ -99,13 +116,12 @@ function TaskNode({ data }: { data: { task: Task; blocked: boolean; onToggle: ()
     return (
         <div
             onClick={handleClick}
-            className={`bg-white rounded-xl shadow-sm border border-stone-200 p-4 min-w-[200px] group relative cursor-pointer hover:shadow-md transition-shadow ${blocked ? 'opacity-50' : ''}`}
+            className={`bg-white dark:bg-zinc-900 rounded-xl shadow-sm border border-stone-200 dark:border-zinc-700 p-4 min-w-[200px] group relative cursor-pointer hover:shadow-md transition-shadow ${blocked ? 'opacity-50' : ''}`}
         >
-            {/* Left Handle - Target (incoming dependencies) */}
             <Handle
                 type="target"
                 position={Position.Left}
-                className="!bg-stone-300 !border-stone-400"
+                className={isDark ? '!bg-zinc-600 !border-zinc-500' : '!bg-stone-300 !border-stone-400'}
             />
 
             <div className="flex items-center gap-3">
@@ -115,7 +131,7 @@ function TaskNode({ data }: { data: { task: Task; blocked: boolean; onToggle: ()
                             e.stopPropagation();
                             onToggle();
                         }}
-                        className="text-stone-400 hover:text-stone-600 transition-colors focus:outline-none"
+                        className="text-stone-400 dark:text-zinc-500 hover:text-stone-600 dark:hover:text-zinc-300 transition-colors focus:outline-none"
                     >
                         {task.status === 'done' ? (
                             <CheckCircle2 className="w-5 h-5 text-green-500/80" />
@@ -124,19 +140,18 @@ function TaskNode({ data }: { data: { task: Task; blocked: boolean; onToggle: ()
                         )}
                     </button>
 
-                    {/* Lock icon for blocked tasks */}
                     {blocked && task.status === 'todo' && (
-                        <Lock className="w-3 h-3 text-stone-400 absolute -top-1 -right-1" />
+                        <Lock className="w-3 h-3 text-stone-400 dark:text-zinc-500 absolute -top-1 -right-1" />
                     )}
                 </div>
 
                 <div className="flex-1 min-w-0">
                     <span
                         className={`block text-sm transition-all truncate ${task.status === 'done'
-                                ? 'text-stone-400 line-through decoration-stone-300'
-                                : blocked
-                                    ? 'text-stone-400'
-                                    : 'text-stone-700'
+                            ? 'text-stone-400 dark:text-zinc-600 line-through decoration-stone-300 dark:decoration-zinc-700'
+                            : blocked
+                                ? 'text-stone-400 dark:text-zinc-500'
+                                : 'text-stone-700 dark:text-zinc-200'
                             }`}
                     >
                         {task.title}
@@ -148,8 +163,8 @@ function TaskNode({ data }: { data: { task: Task; blocked: boolean; onToggle: ()
                             return (
                                 <span
                                     className={`flex items-center gap-0.5 text-xs px-1 py-0.5 rounded ${progress.done === progress.total
-                                            ? 'bg-green-100 text-green-600'
-                                            : 'bg-stone-100 text-stone-500'
+                                        ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
+                                        : 'bg-stone-100 dark:bg-zinc-800 text-stone-500 dark:text-zinc-400'
                                         }`}
                                 >
                                     <ListChecks className="w-3 h-3" />
@@ -165,17 +180,16 @@ function TaskNode({ data }: { data: { task: Task; blocked: boolean; onToggle: ()
                         e.stopPropagation();
                         onDelete();
                     }}
-                    className="opacity-0 group-hover:opacity-100 p-1 text-stone-300 hover:text-red-400 transition-all duration-200 focus:outline-none"
+                    className="opacity-0 group-hover:opacity-100 p-1 text-stone-300 dark:text-zinc-600 hover:text-red-400 transition-all duration-200 focus:outline-none"
                 >
                     <Trash2 className="w-4 h-4" />
                 </button>
             </div>
 
-            {/* Right Handle - Source (outgoing to dependents) */}
             <Handle
                 type="source"
                 position={Position.Right}
-                className="!bg-stone-300 !border-stone-400"
+                className={isDark ? '!bg-zinc-600 !border-zinc-500' : '!bg-stone-300 !border-stone-400'}
             />
         </div>
     );
@@ -240,9 +254,10 @@ function getNonOverlappingPosition(
     return position;
 }
 
-// Convert task dependencies to xyflow edges
-function tasksToEdges(tasks: Task[]): Edge[] {
+// Convert task dependencies to xyflow edges (dynamic color based on theme)
+function tasksToEdges(tasks: Task[], isDark: boolean): Edge[] {
     const edges: Edge[] = [];
+    const edgeColor = isDark ? '#71717a' : '#a8a29e';
 
     tasks.forEach((task) => {
         const deps = task.dependencies || [];
@@ -254,10 +269,10 @@ function tasksToEdges(tasks: Task[]): Edge[] {
                 type: 'smoothstep',
                 animated: false,
                 selectable: true,
-                style: { stroke: '#a8a29e', strokeWidth: 2 },
+                style: { stroke: edgeColor, strokeWidth: 2 },
                 markerEnd: {
                     type: MarkerType.ArrowClosed,
-                    color: '#a8a29e',
+                    color: edgeColor,
                     width: 20,
                     height: 20,
                 },
@@ -280,6 +295,8 @@ export default function CanvasView() {
         selectTask,
     } = useTaskStore();
 
+    const { isDark } = useTheme();
+
     // Use ref to avoid stale closures
     const toggleTaskRef = useRef(toggleTask);
     const deleteTaskRef = useRef(deleteTask);
@@ -299,7 +316,6 @@ export default function CanvasView() {
     useEffect(() => {
         if (!cleanupDone.current) {
             cleanupDone.current = true;
-            // Use setTimeout to avoid setState during render
             setTimeout(() => {
                 cleanupPositions();
             }, 0);
@@ -318,18 +334,19 @@ export default function CanvasView() {
             data: {
                 task,
                 blocked: isTaskBlocked(task, tasks),
+                isDark,
                 onToggle: () => toggleTaskRef.current(task.id),
                 onDelete: () => deleteTaskRef.current(task.id),
                 onSelect: () => selectTaskRef.current(task.id),
             },
         }));
         setNodes(newNodes);
-    }, [tasks]);
+    }, [tasks, isDark]);
 
     // Sync edges from store when tasks change
     useEffect(() => {
-        setEdges(tasksToEdges(tasks));
-    }, [tasks]);
+        setEdges(tasksToEdges(tasks, isDark));
+    }, [tasks, isDark]);
 
     // Handle node changes (smooth dragging + selection)
     const onNodesChange = useCallback((changes: NodeChange[]) => {
@@ -341,14 +358,15 @@ export default function CanvasView() {
         setEdges((eds) => applyEdgeChanges(changes, eds) as Edge[]);
     }, []);
 
-    // Handle drag stop
+    // Handle node drag end
     const onNodeDragStop = useCallback(
-        (_event: React.MouseEvent, node: Node) => {
+        (_: React.MouseEvent, node: Node) => {
             setNodes((currentNodes) => {
-                const finalPosition = getNonOverlappingPosition(node, currentNodes);
-                updateTaskPosition(node.id, finalPosition);
+                const snappedPosition = getNonOverlappingPosition(node, currentNodes);
+                updateTaskPosition(node.id, snappedPosition);
+
                 return currentNodes.map((n) =>
-                    n.id === node.id ? { ...n, position: finalPosition } : n
+                    n.id === node.id ? { ...n, position: snappedPosition } : n
                 );
             });
         },
@@ -380,7 +398,7 @@ export default function CanvasView() {
 
     return (
         <div className="w-full h-[calc(100vh-140px)]">
-            <style>{nodeStyleOverrides}</style>
+            <style>{getNodeStyleOverrides(isDark)}</style>
             <ReactFlow
                 nodes={nodes}
                 edges={edges}
@@ -392,18 +410,18 @@ export default function CanvasView() {
                 nodeTypes={nodeTypes}
                 fitView
                 proOptions={{ hideAttribution: true }}
-                className="bg-stone-50"
+                className={isDark ? 'bg-zinc-950' : 'bg-stone-50'}
                 deleteKeyCode="Backspace"
             >
                 <Background
                     variant={BackgroundVariant.Dots}
                     gap={GRID_SIZE}
                     size={1}
-                    color="#d6d3d1"
+                    color={isDark ? '#3f3f46' : '#d6d3d1'}
                     offset={0}
                 />
                 <Controls
-                    className="bg-white border border-stone-200 rounded-lg shadow-sm"
+                    className={isDark ? 'bg-zinc-800 border border-zinc-700 rounded-lg shadow-sm' : 'bg-white border border-stone-200 rounded-lg shadow-sm'}
                     showInteractive={false}
                 />
             </ReactFlow>
